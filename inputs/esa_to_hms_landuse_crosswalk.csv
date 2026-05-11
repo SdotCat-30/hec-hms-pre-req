@@ -1,0 +1,12 @@
+ESA_Code,ESA_Class,HMS_LandUse
+10,Trees,Forest
+20,Shrubland,Brush
+30,Grassland,Meadow
+40,Cropland,Row crops
+50,Built-up,Impervious
+60,Bare/sparse veg.,Fallow
+70,Snow and ice,Snow/ice
+80,Open water,Water
+90,Herbaceous wetland,Wetland
+95,Mangroves,Forest
+100,Moss/lichen,Meadow

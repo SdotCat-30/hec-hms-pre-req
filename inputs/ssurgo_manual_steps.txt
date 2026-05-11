@@ -1,0 +1,50 @@
+        SSURGO Hydrologic Soil Group — Manual Download Instructions
+        ===========================================================
+
+        The USDA SSURGO soil service (sdmdataaccess.nrcs.usda.gov) is
+        blocked in this environment. Use any of the methods below to obtain
+        HSG data for the watershed and place the output in the inputs/ folder.
+
+        Watershed bounding box (WGS84): W=-85.96958 S=37.39875 E=-84.80125 N=38.41458
+
+        METHOD 1 — Web Soil Survey (manual)
+        ------------------------------------
+        1. Go to https://websoilsurvey.nrcs.usda.gov/
+        2. Navigate to the watershed area (use the bounding box above).
+        3. Define an AOI by drawing the watershed boundary.
+        4. Go to Soil Data Explorer → Soil Properties → Hydrologic Soil Group.
+        5. Download as Thematic Map → export the raster or tabular data.
+        6. Save to inputs/ssurgo_hsg.tif (raster) or inputs/ssurgo_hsg.gpkg (vector).
+
+        METHOD 2 — USDA Geospatial Data Gateway (bulk download)
+        --------------------------------------------------------
+        1. Go to https://gdg.sc.egov.usda.gov/
+        2. Select your state (Kentucky) → SSURGO → Download.
+        3. Import with geopandas/pyogrio and extract 'hydgrpdcd' field.
+
+        METHOD 3 — Python script (run from unrestricted network)
+        ---------------------------------------------------------
+        Run this from a machine with internet access:
+
+            import pygeohydro as gh
+            import geopandas as gpd
+
+            gdf = gpd.read_file("watershed.gpkg")
+            geometry = gdf.geometry.iloc[0]
+            soil = gh.soil_gnatsgo("hydgrpdcd", geometry, crs=4326)
+            soil["hydgrpdcd"].rio.to_raster("inputs/gnatsgo_hsg.tif")
+
+        SSURGO SDM SQL query (usable at https://sdmdataaccess.nrcs.usda.gov/Query.aspx):
+        ----------------------------------------------------------------------------------
+        SELECT mu.mukey, mu.musym, mu.muname,
+       c.hydgrpdcd, c.comppct_r
+FROM mapunit mu
+JOIN component c ON mu.mukey = c.mukey
+WHERE mu.mukey IN (
+    SELECT mukey FROM SDA_Get_Mukey_from_intersection_with_WktWgs84(
+        'polygon((-85.96958333333335 37.39875000000001, -84.80125000000001 37.39875000000001, -84.80125000000001 38.41458333333334, -85.96958333333335 38.41458333333334, -85.96958333333335 37.39875000000001))'
+    )
+)
+AND c.majcompflag = 'Yes'
+ORDER BY mu.mukey, c.comppct_r DESC
+
