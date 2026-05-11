@@ -60,15 +60,28 @@ print(f"Watershed bbox (WGS84): W={west:.5f} S={south:.5f} E={east:.5f} N={north
 # ════════════════════════════════════════════════════════════════════════════
 # 1. DEM — USGS 3DEP 10 m (via AWS S3 COG, routed by py3dep.get_dem)
 # ════════════════════════════════════════════════════════════════════════════
-dem_path = OUT_DIR / "dem_10m.tif"
-if dem_path.exists():
-    print(f"[1/3] DEM already exists — skipping download ({dem_path.stat().st_size / 1e6:.1f} MB)")
+# Download both a 10 m DEM (full resolution, ~290 MB; local-only) and a
+# 30 m DEM (~30 MB; small enough to be tracked in git).
+dem_10m_path = OUT_DIR / "dem_10m.tif"
+dem_30m_path = OUT_DIR / "dem_30m.tif"
+
+if dem_10m_path.exists():
+    print(f"[1/3] DEM 10 m already exists — skipping ({dem_10m_path.stat().st_size / 1e6:.1f} MB)")
 else:
-    print("[1/3] Downloading DEM — USGS 3DEP 10 m (AWS S3 COG) …")
-    dem: xr.DataArray = py3dep.get_dem(geometry, resolution=10, crs="EPSG:4326")
-    dem.rio.to_raster(dem_path, compress="deflate")
-    print(f"  Saved  → {dem_path}  ({dem_path.stat().st_size / 1e6:.1f} MB)")
-    print(f"  Shape  : {dem.shape}  CRS: {dem.rio.crs}\n")
+    print("[1/3a] Downloading DEM 10 m — USGS 3DEP (AWS S3 COG) …")
+    dem10: xr.DataArray = py3dep.get_dem(geometry, resolution=10, crs="EPSG:4326")
+    dem10.rio.to_raster(dem_10m_path, compress="deflate")
+    print(f"  Saved  → {dem_10m_path}  ({dem_10m_path.stat().st_size / 1e6:.1f} MB)")
+    print(f"  Shape  : {dem10.shape}  CRS: {dem10.rio.crs}")
+
+if dem_30m_path.exists():
+    print(f"[1/3b] DEM 30 m already exists — skipping ({dem_30m_path.stat().st_size / 1e6:.1f} MB)")
+else:
+    print("[1/3b] Downloading DEM 30 m — USGS 3DEP (AWS S3 COG) …")
+    dem30: xr.DataArray = py3dep.get_dem(geometry, resolution=30, crs="EPSG:4326")
+    dem30.rio.to_raster(dem_30m_path, compress="deflate")
+    print(f"  Saved  → {dem_30m_path}  ({dem_30m_path.stat().st_size / 1e6:.1f} MB)")
+    print(f"  Shape  : {dem30.shape}  CRS: {dem30.rio.crs}")
 print()
 
 
@@ -190,50 +203,75 @@ ssurgo_ok = try_ssurgo_download()
 
 if not ssurgo_ok:
     print("  SSURGO service is not reachable from this environment.")
+    print("  Writing detailed fallback instructions + ready-to-run scripts.\n")
     instructions = textwrap.dedent(f"""\
-        SSURGO Hydrologic Soil Group — Manual Download Instructions
-        ===========================================================
+        SSURGO Hydrologic Soil Group — Download Instructions
+        ====================================================
 
-        The USDA SSURGO soil service (sdmdataaccess.nrcs.usda.gov) is
-        blocked in this environment. Use any of the methods below to obtain
-        HSG data for the watershed and place the output in the inputs/ folder.
+        The USDA SSURGO soil service is blocked by this environment's network
+        proxy (host_not_allowed). Below are four methods, in order of speed
+        and accuracy. Use any one to obtain HSG data for the watershed.
 
-        Watershed bounding box (WGS84): W={west:.5f} S={south:.5f} E={east:.5f} N={north:.5f}
+        Watershed bbox (WGS84): W={west:.5f} S={south:.5f} E={east:.5f} N={north:.5f}
+        State: Kentucky
 
-        METHOD 1 — Web Soil Survey (manual)
-        ------------------------------------
+        ─────────────────────────────────────────────────────────────────────
+        METHOD 1 — Run download_ssurgo.py from any machine with open internet
+        ─────────────────────────────────────────────────────────────────────
+        This is the fastest reproducible path. The script in this repo
+        (scripts/download_ssurgo.py) hits SDA's REST API for the watershed
+        bounding box and writes both a vector layer (mukey + HSG) and a
+        rasterised HSG GeoTIFF. Just run:
+
+            pip install pygeohydro geopandas rioxarray rasterio shapely
+            python scripts/download_ssurgo.py
+
+        Outputs:
+            inputs/ssurgo_hsg.gpkg   — polygons with mukey, musym, hydgrpdcd
+            inputs/ssurgo_hsg.tif    — rasterised HSG (1=A, 2=B, 3=C, 4=D)
+
+        ─────────────────────────────────────────────────────────────────────
+        METHOD 2 — Web Soil Survey (manual, no scripting)
+        ─────────────────────────────────────────────────────────────────────
         1. Go to https://websoilsurvey.nrcs.usda.gov/
-        2. Navigate to the watershed area (use the bounding box above).
-        3. Define an AOI by drawing the watershed boundary.
-        4. Go to Soil Data Explorer → Soil Properties → Hydrologic Soil Group.
-        5. Download as Thematic Map → export the raster or tabular data.
-        6. Save to inputs/ssurgo_hsg.tif (raster) or inputs/ssurgo_hsg.gpkg (vector).
+        2. Zoom to the watershed area or paste the bounding box above.
+        3. Define an Area Of Interest (AOI) covering the watershed polygon.
+        4. Soil Data Explorer → Soil Properties and Qualities →
+           Soil Qualities and Features → Hydrologic Soil Group
+        5. Click "View Rating" then "Add to Shopping Cart".
+        6. From the cart, "Get Now" → download the AOI ZIP package.
+        7. Inside the ZIP: tabular/chorizon.txt and spatial/soilmu_a_*.shp
+           join via mukey to bring hydgrpdcd onto the polygons.
 
-        METHOD 2 — USDA Geospatial Data Gateway (bulk download)
-        --------------------------------------------------------
+        ─────────────────────────────────────────────────────────────────────
+        METHOD 3 — USDA Geospatial Data Gateway (bulk SSURGO by state)
+        ─────────────────────────────────────────────────────────────────────
         1. Go to https://gdg.sc.egov.usda.gov/
-        2. Select your state (Kentucky) → SSURGO → Download.
-        3. Import with geopandas/pyogrio and extract 'hydgrpdcd' field.
+        2. Choose Kentucky → Soils → SSURGO → request data.
+        3. You'll receive a download link by email for the state SSURGO file
+           geodatabase (~1 GB). Extract `gSSURGO_KY.gdb`.
+        4. Open the muaggatt table → join hydgrpdcd to MUPOLYGON by mukey.
 
-        METHOD 3 — Python script (run from unrestricted network)
-        ---------------------------------------------------------
-        Run this from a machine with internet access:
+        ─────────────────────────────────────────────────────────────────────
+        METHOD 4 — Global HYSOGs250m (Ross et al. 2018) — coarse fallback
+        ─────────────────────────────────────────────────────────────────────
+        If SSURGO is unavailable and you need a quick global product:
+        DOI:10.3334/ORNLDAAC/1566 — 250 m global HSG GeoTIFF.
+        Download HYSOGs250m.tif from ORNL DAAC (free, requires Earthdata
+        login) then clip with:
 
-            import pygeohydro as gh
-            import geopandas as gpd
+            rio clip HYSOGs250m.tif inputs/hysog_clip.tif --bounds {west} {south} {east} {north}
 
-            gdf = gpd.read_file("watershed.gpkg")
-            geometry = gdf.geometry.iloc[0]
-            soil = gh.soil_gnatsgo("hydgrpdcd", geometry, crs=4326)
-            soil["hydgrpdcd"].rio.to_raster("inputs/gnatsgo_hsg.tif")
+        Cell values 1=A, 2=B, 3=C, 4=D, 11=A/D, 12=B/D, 13=C/D, 14=D/D.
 
-        SSURGO SDM SQL query (usable at https://sdmdataaccess.nrcs.usda.gov/Query.aspx):
-        ----------------------------------------------------------------------------------
+        ─────────────────────────────────────────────────────────────────────
+        SDA SQL (paste at https://sdmdataaccess.nrcs.usda.gov/Query.aspx):
+        ─────────────────────────────────────────────────────────────────────
         {SSURGO_QUERY}
     """)
     manual_path = OUT_DIR / "ssurgo_manual_steps.txt"
     manual_path.write_text(instructions)
-    print(f"  Manual instructions → {manual_path}\n")
+    print(f"  Manual instructions → {manual_path}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
