@@ -1,0 +1,5 @@
+cache/
+*.pyc
+__pycache__/
+# DEM is ~294 MB — too large for GitHub without LFS; download via download_inputs.py
+inputs/dem_10m.tif
